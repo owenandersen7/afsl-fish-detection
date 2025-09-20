@@ -3,6 +3,7 @@ from ultralytics import YOLO
 import cv2
 import tempfile
 import os
+import time
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 
 # =========================
@@ -45,6 +46,7 @@ def process_video(video_path, model):
     cap = cv2.VideoCapture(video_path)
     stframe = st.empty()
     frame_count = 0
+    prev_time = time.time()
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -64,6 +66,13 @@ def process_video(video_path, model):
         results = model(frame, imgsz=IMGSZ)
         annotated_frame = results[0].plot()
 
+        # Hitung FPS
+        curr_time = time.time()
+        fps = 1 / (curr_time - prev_time)
+        prev_time = curr_time
+        cv2.putText(annotated_frame, f"FPS: {fps:.1f}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
         # Tampilkan frame
         stframe.image(annotated_frame, channels="BGR")
         frame_count += 1
@@ -80,9 +89,9 @@ if mode == "Upload Video":
         with st.spinner("Memproses video..."):
             tfile = tempfile.NamedTemporaryFile(delete=False)
             tfile.write(uploaded_file.read())
-            tfile.close()  # Tutup file sebelum dipakai OpenCV
+            tfile.close()
             process_video(tfile.name, model)
-            os.unlink(tfile.name)  # Hapus setelah selesai
+            os.unlink(tfile.name)
         st.success("✅ Selesai memproses video!")
 
 # =========================
@@ -94,6 +103,7 @@ elif mode == "Kamera Real-Time":
     class YOLOTransformer(VideoTransformerBase):
         def __init__(self):
             self.frame_count = 0
+            self.prev_time = time.time()
 
         def transform(self, frame):
             self.frame_count += 1
@@ -109,13 +119,22 @@ elif mode == "Kamera Real-Time":
 
             # Deteksi YOLO
             results = model(img, imgsz=IMGSZ)
-            return results[0].plot()
+            annotated_frame = results[0].plot()
+
+            # Hitung FPS
+            curr_time = time.time()
+            fps = 1 / (curr_time - self.prev_time)
+            self.prev_time = curr_time
+            cv2.putText(annotated_frame, f"FPS: {fps:.1f}", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+            return annotated_frame
 
     webrtc_streamer(
         key="fish-detection",
         video_transformer_factory=YOLOTransformer,
         media_stream_constraints={
-            "video": {"width": {"ideal": 320}, "height": {"ideal": 240}},  # resolusi rendah untuk HP
+            "video": {"width": {"ideal": 320}, "height": {"ideal": 240}},
             "audio": False
         }
     )
